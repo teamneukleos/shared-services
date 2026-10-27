@@ -1,6 +1,8 @@
+"use client";
+
 import Link from "next/link";
 import Image from "next/image";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ArrowUpRight, UsersRound } from "lucide-react";
 
 type AuthLayoutProps = {
@@ -16,6 +18,12 @@ export function AuthLayout({
   heading,
   description,
 }: AuthLayoutProps) {
+  const [year, setYear] = useState<number | null>(null);
+
+  useEffect(() => {
+    setYear(new Date().getFullYear());
+  }, []);
+
   return (
     <main className="min-h-screen bg-white lg:grid lg:grid-cols-[0.95fr_1.05fr]">
       {/* Left branding panel */}
@@ -74,7 +82,7 @@ export function AuthLayout({
         </div>
 
         <div className="relative z-10 flex items-center justify-between gap-4 text-xs text-white/35">
-          <span>© {new Date().getFullYear()} Neukleos People</span>
+          <span>© {year ?? "2025"} Neukleos People</span>
           <span>Built around people.</span>
         </div>
       </section>

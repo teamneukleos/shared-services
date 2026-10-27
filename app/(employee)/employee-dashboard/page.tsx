@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   CalendarDays,
@@ -118,13 +119,20 @@ function StatusPill({ status }: { status: string }) {
 }
 
 export default function EmployeeDashboard() {
-  const today = new Date();
-  const dateLabel = today.toLocaleDateString("en-GB", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  const [dateLabel, setDateLabel] = useState("");
+
+  useEffect(() => {
+    const today = new Date();
+    setDateLabel(
+      today.toLocaleDateString("en-GB", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }),
+    );
+  }, []);
+
   const firstName = employee.name.split(" ")[0];
   const leaveRemaining = leaveBalance.reduce((sum, item) => sum + item.total - item.used, 0);
 
@@ -132,7 +140,7 @@ export default function EmployeeDashboard() {
     <main className="min-w-0 bg-[#f7f7f5] px-4 pb-10 pt-6 text-[#202024] md:px-8">
       <div className="mb-7 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
         <div>
-          <p className="mb-2 text-xs text-[#77777b]">{dateLabel}</p>
+          <p className="mb-2 text-xs text-[#77777b]">{dateLabel || "\u00A0"}</p>
           <h1 className="text-2xl font-semibold tracking-tight text-[#17171b] sm:text-[28px]">Welcome back, {firstName}</h1>
           <p className="mt-2 text-sm text-[#77777b]">Here’s a quick look at your work, leave and upcoming activities.</p>
         </div>

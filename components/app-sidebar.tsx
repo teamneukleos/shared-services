@@ -1,8 +1,7 @@
-
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import {
   LayoutDashboard,
@@ -27,9 +26,7 @@ import {
 const sections = [
   {
     title: "MAIN",
-    items: [
-      { label: "Dashboard", icon: LayoutDashboard, href: "/" },
-    ],
+    items: [{ label: "Dashboard", icon: LayoutDashboard, href: "/" }],
   },
   {
     title: "HR MANAGEMENT",
@@ -67,14 +64,19 @@ const sections = [
   },
 ];
 
+const EXPANDED_WIDTH = 264;
+const COLLAPSED_WIDTH = 76;
+
 type AppSidebarProps = {
   mobileOpen: boolean;
   onClose: () => void;
+  onWidthChange: React.Dispatch<React.SetStateAction<number>>;
 };
 
 export function AppSidebar({
   mobileOpen,
   onClose,
+  onWidthChange,
 }: AppSidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -84,6 +86,11 @@ export function AppSidebar({
     "WORKSPACE",
     "ADMINISTRATION",
   ]);
+
+  // Report the current desktop width to the parent layout.
+  useEffect(() => {
+    onWidthChange(collapsed ? COLLAPSED_WIDTH : EXPANDED_WIDTH);
+  }, [collapsed, onWidthChange]);
 
   function toggleSection(title: string) {
     setOpenSections((current) =>
@@ -244,11 +251,7 @@ export function AppSidebar({
               HR
             </div>
 
-            <div
-              className={`min-w-0 ${
-                collapsed ? "md:hidden" : ""
-              }`}
-            >
+            <div className={`min-w-0 ${collapsed ? "md:hidden" : ""}`}>
               <p className="truncate text-sm font-semibold text-neutral-200">
                 HR Admin
               </p>
