@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Menu,
   Search,
@@ -11,6 +12,7 @@ import {
   Settings,
   LogOut,
 } from "lucide-react";
+import { useAuth } from "@/components/auth-provider";
 
 type EmployeeTopbarProps = {
   onMenuClick?: () => void;
@@ -19,8 +21,13 @@ type EmployeeTopbarProps = {
 export default function EmployeeTopbar({
   onMenuClick,
 }: EmployeeTopbarProps) {
+  const { user, logout } = useAuth();
+  const router = useRouter();
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  const displayName = user?.email?.split("@")[0] ?? "Employee";
+  const initials = (user?.email?.[0] ?? "E").toUpperCase();
 
   return (
     <header className="sticky top-0 z-30 flex h-[76px] items-center justify-between border-b border-[#EAEAEA] bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
@@ -125,14 +132,16 @@ export default function EmployeeTopbar({
             className="flex items-center gap-2 rounded-xl p-1.5 transition hover:bg-[#F7F7F7]"
           >
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FCEBA5] text-xs font-bold text-[#4A3B00]">
-              OA
+              {initials}
             </div>
 
             <div className="hidden text-left md:block">
-              <p className="text-xs font-semibold text-[#292929]">
-                Oluwatosin A.
+              <p className="max-w-[140px] truncate text-xs font-semibold text-[#292929]">
+                {displayName}
               </p>
-              <p className="mt-0.5 text-[10px] text-[#888]">Employee</p>
+              <p className="mt-0.5 max-w-[140px] truncate text-[10px] text-[#888]">
+                {user?.email ?? "Employee"}
+              </p>
             </div>
 
             <ChevronDown
@@ -165,7 +174,10 @@ export default function EmployeeTopbar({
 
               <button
                 type="button"
-                onClick={() => setProfileOpen(false)}
+                onClick={() => {
+                  setProfileOpen(false);
+                  void logout().then(() => router.replace("/sign-in"));
+                }}
                 className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs text-[#A33] hover:bg-red-50"
               >
                 <LogOut size={15} />
