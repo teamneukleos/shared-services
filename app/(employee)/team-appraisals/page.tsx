@@ -200,7 +200,7 @@ const initialAppraisals: TeamAppraisal[] = [
         employeeRating: 4,
         employeeComment: "I completed the campaigns assigned to me.",
         managerRating: 4,
-        managerComment: "Campaigns were delivered well and on time.",
+        managerComment: "Campaigns were delivered well and on time. ",
       },
       {
         id: 2,
