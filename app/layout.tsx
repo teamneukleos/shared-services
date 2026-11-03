@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque } from "next/font/google";
+import { Providers } from "./providers";
 import "./globals.css";
 
-// Configure Bricolage Grotesque
 const bricolage = Bricolage_Grotesque({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800"],
@@ -23,7 +23,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={bricolage.variable}>
       <body className={`${bricolage.className} antialiased`}>
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

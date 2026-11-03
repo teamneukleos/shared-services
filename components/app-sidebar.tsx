@@ -20,8 +20,10 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   UserRoundPlus,
+  UserCog,
   X,
 } from "lucide-react";
+import { useAuth } from "@/components/auth-provider";
 
 const sections = [
   {
@@ -54,6 +56,7 @@ const sections = [
     title: "ADMINISTRATION",
     items: [
       { label: "Organisation", icon: Building2, href: "/organisation" },
+      { label: "Users", icon: UserCog, href: "/settings/users" },
       {
         label: "Roles & Permissions",
         icon: ShieldCheck,
@@ -79,6 +82,7 @@ export function AppSidebar({
   onWidthChange,
 }: AppSidebarProps) {
   const pathname = usePathname();
+  const { user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [openSections, setOpenSections] = useState<string[]>([
     "MAIN",
@@ -248,15 +252,17 @@ export function AppSidebar({
         <div className="shrink-0 border-t border-white/5 bg-[#0d0d10] p-4">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/10 text-[11px] font-bold text-[#FDC517]">
-              HR
+              {(user?.email?.[0] ?? "U").toUpperCase()}
             </div>
 
             <div className={`min-w-0 ${collapsed ? "md:hidden" : ""}`}>
               <p className="truncate text-sm font-semibold text-neutral-200">
-                HR Admin
+                {user?.email ?? "Signed in"}
               </p>
-              <p className="mt-0.5 text-xs text-neutral-500">
-                Human Resources
+              <p className="mt-0.5 truncate text-xs text-neutral-500">
+                {user?.organisationId
+                  ? `Org ${user.organisationId.slice(0, 8)}…`
+                  : "Organisation"}
               </p>
             </div>
           </div>

@@ -1,28 +1,23 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
-  ArrowDownRight,
-  ArrowRight,
-  ArrowUpRight,
   CalendarDays,
-  Cake,
-  CalendarCheck,
   ChevronLeft,
   ChevronRight,
-  Clock3,
   ClipboardCheck,
+  Clock3,
   UsersRound,
 } from "lucide-react";
-
-import { appraisalSummary, employees, leaveRequests } from "@/lib/mock-data";
-
-// Hardcoded "today" — no Date objects at all.
-const TODAY_YEAR = 2026;
-const TODAY_MONTH = 9; // October (0-indexed)
-const TODAY_DAY = 24;
-
-const DATE_LABEL = "Saturday, 24 October 2026";
+import { useAuth } from "@/components/auth-provider";
+import { ApiError } from "@/lib/api/types";
+import {
+  listEmployees,
+  listLeaveApplications,
+  listOnboardingPlans,
+} from "@/lib/hr/api";
+import type { LeaveApplication } from "@/lib/hr/types";
 
 const monthNames = [
   "January",
@@ -39,43 +34,6 @@ const monthNames = [
   "December",
 ];
 
-const birthdayRecords = [
-  { name: "Kemi Johnson", dateOfBirth: "1999-10-31", department: "Content Studio" },
-  { name: "Amara Okafor", dateOfBirth: "1998-11-02", department: "Creative Studio" },
-  { name: "Grace Eze", dateOfBirth: "1997-11-05", department: "Andara Studio" },
-  { name: "Daniel Adebayo", dateOfBirth: "1995-10-29", department: "Operations" },
-  { name: "Sarah Williams", dateOfBirth: "1994-12-12", department: "Finance" },
-  { name: "Tunde Bello", dateOfBirth: "1996-11-01", department: "Creative Studio" },
-];
-
-// Pure arithmetic — no Date constructor.
-function daysBetweenYears(month: number, day: number): number {
-  // Days since start of year (rough, month lengths from 2026, non-leap).
-  const monthLengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  const target = monthLengths.slice(0, month).reduce((a, b) => a + b, 0) + day;
-  const today = monthLengths.slice(0, TODAY_MONTH).reduce((a, b) => a + b, 0) + TODAY_DAY;
-  return target - today;
-}
-
-function getNextBirthdayDaysAway(dateOfBirth: string): number {
-  const [, monthString, dayString] = dateOfBirth.split("-");
-  const month = Number(monthString) - 1;
-  const day = Number(dayString);
-
-  let days = daysBetweenYears(month, day);
-  if (days < 0) {
-    // Birthday already passed this year — next year.
-    days += 365;
-  }
-  return days;
-}
-
-function formatBirthday(dateOfBirth: string): string {
-  const [, monthString, dayString] = dateOfBirth.split("-");
-  const monthShort = monthNames[Number(monthString) - 1].slice(0, 3);
-  return `${Number(dayString)} ${monthShort}`;
-}
-
 const leaveColours = [
   "bg-[#fff7d6] text-[#8a6900]",
   "bg-[#e5e8f7] text-[#535da0]",
@@ -83,235 +41,199 @@ const leaveColours = [
   "bg-[#f3dfdf] text-[#9b5757]",
 ];
 
-export default function EmployeeDashboard() {
-  const [month, setMonth] = useState(9);
-  const [year, setYear] = useState(2026);
+export default function HrDashboardPage() {
+  const { user, hasPermission } = useAuth();
+  const canReadEmployees = hasPermission("employee.read");
+  const canReadLeave = hasPermission("leave.application.read");
+  const canReadOnboarding = hasPermission("onboarding.read");
 
-  // Birthday data computed purely from constants — no Date objects.
-  const birthdayInfo = useMemo(() => {
-    const enriched = birthdayRecords.map((person) => ({
-      ...person,
-      daysAway: getNextBirthdayDaysAway(person.dateOfBirth),
-    }));
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth());
+  const [year, setYear] = useState(now.getFullYear());
+  const [employeeTotal, setEmployeeTotal] = useState(0);
+  const [activeEmployees, setActiveEmployees] = useState(0);
+  const [pendingLeave, setPendingLeave] = useState(0);
+  const [onLeaveToday, setOnLeaveToday] = useState(0);
+  const [onboardingInProgress, setOnboardingInProgress] = useState(0);
+  const [approvedLeave, setApprovedLeave] = useState<LeaveApplication[]>([]);
+  const [recentPending, setRecentPending] = useState<LeaveApplication[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-    const sorted = [...enriched].sort((a, b) => a.daysAway - b.daysAway);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const jobs: Promise<void>[] = [];
 
-    const withinSevenDays = enriched.filter((p) => p.daysAway <= 7).length;
-
-    return { sorted, withinSevenDays };
-  }, []);
-
-  function changeMonth(amount: number) {
-    // Pure month/year arithmetic — no Date constructor.
-    let nextMonth = month + amount;
-    let nextYear = year;
-
-    while (nextMonth < 0) {
-      nextMonth += 12;
-      nextYear -= 1;
-    }
-    while (nextMonth > 11) {
-      nextMonth -= 12;
-      nextYear += 1;
-    }
-
-    setMonth(nextMonth);
-    setYear(nextYear);
-  }
-
-  // Day-of-week for the 1st of the displayed month (Zeller-like, via known anchor).
-  // 1 Oct 2026 is a Thursday (index 4, Sunday = 0).
-  const firstDay = (() => {
-    const monthLengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    const anchorYear = 2026;
-    const anchorMonth = 9; // October
-    const anchorFirstDay = 4; // Thursday
-
-    let deltaMonths =
-      (year - anchorYear) * 12 + (month - anchorMonth);
-
-    let dow = anchorFirstDay;
-    if (deltaMonths >= 0) {
-      for (let i = 0; i < deltaMonths; i++) {
-        const m = (anchorMonth + i) % 12;
-        const y = anchorYear + Math.floor((anchorMonth + i) / 12);
-        const len = monthLengths[m] + (m === 1 && isLeap(y) ? 1 : 0);
-        dow = (dow + len) % 7;
+      if (canReadEmployees) {
+        jobs.push(
+          listEmployees({ page: 1, size: 1 }).then((result) =>
+            setEmployeeTotal(result.meta.totalItems),
+          ),
+          listEmployees({ page: 1, size: 1, status: "ACTIVE" }).then((result) =>
+            setActiveEmployees(result.meta.totalItems),
+          ),
+        );
       }
-    } else {
-      for (let i = 0; i < -deltaMonths; i++) {
-        const m = (month - i - 1 + 12) % 12;
-        const y = year + Math.floor((month - i - 1) / 12);
-        const len = monthLengths[m] + (m === 1 && isLeap(y) ? 1 : 0);
-        dow = (dow - len + 7) % 7;
+
+      if (canReadLeave) {
+        jobs.push(
+          listLeaveApplications({ page: 1, size: 1, status: "PENDING" }).then(
+            (result) => setPendingLeave(result.meta.totalItems),
+          ),
+          listLeaveApplications({
+            page: 1,
+            size: 100,
+            status: "APPROVED",
+          }).then((result) => setApprovedLeave(result.data)),
+          listLeaveApplications({
+            page: 1,
+            size: 5,
+            status: "PENDING",
+          }).then((result) => setRecentPending(result.data)),
+        );
+      }
+
+      if (canReadOnboarding) {
+        jobs.push(
+          listOnboardingPlans({
+            page: 1,
+            size: 1,
+            status: "IN_PROGRESS",
+          }).then((result) => setOnboardingInProgress(result.meta.totalItems)),
+        );
+      }
+
+      await Promise.all(jobs);
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Could not load dashboard metrics.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [canReadEmployees, canReadLeave, canReadOnboarding]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    const today = startOfDay(new Date());
+    const count = approvedLeave.filter((item) => {
+      const start = startOfDay(new Date(item.startDate));
+      const end = startOfDay(new Date(item.endDate));
+      return start.getTime() <= today.getTime() && end.getTime() >= today.getTime();
+    }).length;
+    setOnLeaveToday(count);
+  }, [approvedLeave]);
+
+  const leaveByDay = useMemo(() => {
+    const map: Record<number, string[]> = {};
+    for (const item of approvedLeave) {
+      const start = startOfDay(new Date(item.startDate));
+      const end = startOfDay(new Date(item.endDate));
+      const cursor = new Date(start);
+      while (cursor.getTime() <= end.getTime()) {
+        if (cursor.getMonth() === month && cursor.getFullYear() === year) {
+          const day = cursor.getDate();
+          map[day] ??= [];
+          const shortName = item.employeeName.split(" ")[0] ?? item.employeeName;
+          if (!map[day].includes(shortName)) {
+            map[day].push(shortName);
+          }
+        }
+        cursor.setDate(cursor.getDate() + 1);
       }
     }
-    return dow;
-  })();
+    return map;
+  }, [approvedLeave, month, year]);
 
-  function isLeap(y: number): boolean {
-    return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
-  }
-
-  const daysInMonth = (() => {
-    const monthLengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    return monthLengths[month] + (month === 1 && isLeap(year) ? 1 : 0);
-  })();
-
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
   const calendarCells = Array.from(
     { length: firstDay + daysInMonth },
     (_, index) => (index < firstDay ? null : index - firstDay + 1),
   );
 
-  const leaveByDay: Record<number, string[]> = {
-    5: ["Amara O."],
-    8: ["Daniel A.", "Grace E."],
-    12: ["Sarah W."],
-    14: ["Tunde B."],
-    15: ["Amara O.", "Sarah W."],
-    19: ["Grace E."],
-    20: ["Daniel A.", "Tunde B."],
-    22: ["Daniel A."],
-    26: ["Amara O.", "Sarah W."],
-    27: ["Amara O."],
-    28: ["Amara O."],
-  };
+  function changeMonth(amount: number) {
+    const next = new Date(year, month + amount, 1);
+    setMonth(next.getMonth());
+    setYear(next.getFullYear());
+  }
 
-  const pendingCount = leaveRequests.filter(
-    (request) => request.status === "Pending",
-  ).length;
-
-  const appraisalProgress =
-    appraisalSummary.employeesInReview > 0
-      ? Math.round(
-          (appraisalSummary.managerReviewsCompleted /
-            appraisalSummary.employeesInReview) *
-            100,
-        )
-      : 0;
-
-  const departmentNames = [
-    "Content Studio",
-    "Andara Studio",
-    "Creative Studio",
-    "Finance",
-    "Operations",
-  ];
+  const greetingName = user?.email?.split("@")[0] ?? "there";
+  const todayLabel = new Date().toLocaleDateString(undefined, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 
   return (
     <main className="min-w-0 bg-[#f7f7f5] px-4 pb-10 pt-6 text-[#202024] md:px-8">
-      {/* Page heading */}
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p className="mb-2 text-xs text-[#737373]">{DATE_LABEL}</p>
-
+          <p className="mb-2 text-xs text-[#737373]">{todayLabel}</p>
           <h1 className="text-2xl font-semibold tracking-tight text-[#17171b] sm:text-[28px]">
-            Good morning, HR Admin
+            Good {timeOfDay()}, {greetingName}
           </h1>
-
           <p className="mt-2 text-sm text-[#737373]">
-            Here's what's happening across your organisation.
+            Live snapshot of people and leave across your organisation.
           </p>
         </div>
-
-        <a
-          href="/employees"
-          className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-[#FDC517] px-4 py-3 text-sm font-semibold text-[#111115] shadow-sm transition hover:bg-[#e8b400] sm:self-auto"
-        >
-          <UsersRound size={17} />
-          Add employee
-        </a>
+        {canReadEmployees && (
+          <Link
+            href="/employees"
+            className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-[#FDC517] px-4 py-3 text-sm font-semibold text-[#111115] shadow-sm transition hover:bg-[#e8b400] sm:self-auto"
+          >
+            <UsersRound size={17} />
+            Employees
+          </Link>
+        )}
       </div>
 
-      {/* Summary cards */}
+      {error && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {error}
+        </div>
+      )}
+
       <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           label="Total employees"
-          value={String(employees.length)}
-          detail="Across all departments"
+          value={loading ? "…" : String(employeeTotal)}
+          detail={`${activeEmployees} active`}
           icon={<UsersRound size={19} />}
-          trend="View employee directory"
+          href="/employees"
         />
-
         <SummaryCard
           label="On leave today"
-          value="2"
-          detail="Employees currently away"
+          value={loading ? "…" : String(onLeaveToday)}
+          detail="Approved leave covering today"
           icon={<CalendarDays size={19} />}
-          trend="View leave"
+          href="/leave-management"
         />
-
         <SummaryCard
-          label="Pending approvals"
-          value={String(pendingCount)}
-          detail="Leave requests to review"
+          label="Pending leave"
+          value={loading ? "…" : String(pendingLeave)}
+          detail="Awaiting review"
           icon={<Clock3 size={19} />}
-          trend="Needs attention"
-          warning
+          href="/leave-management"
+          warning={pendingLeave > 0}
         />
-
         <SummaryCard
-          label="Appraisal progress"
-          value={`${appraisalProgress}%`}
-          detail="Manager reviews completed"
+          label="Onboarding in progress"
+          value={loading ? "…" : String(onboardingInProgress)}
+          detail="Active plans"
           icon={<ClipboardCheck size={19} />}
-          trend={`${appraisalSummary.managerReviewsCompleted} of ${appraisalSummary.employeesInReview} reviews`}
+          href="/onboarding"
         />
       </section>
 
-      {/* Upcoming birthdays */}
-      <section className="mb-6 rounded-2xl border border-[#e7e7e4] bg-white p-5 shadow-[0_4px_18px_rgba(17,17,21,0.025)] sm:p-6">
-        <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-          <div className="flex items-start gap-3">
-            <div className="rounded-xl bg-[#fff6cf] p-2.5 text-[#755800]">
-              <Cake size={20} />
-            </div>
-            <div>
-              <h2 className="font-semibold">Upcoming birthdays</h2>
-              <p className="mt-1 text-xs text-[#737373]">
-                Birthdays coming up across your organisation.
-              </p>
-            </div>
-          </div>
-          <span className="self-start rounded-full bg-[#fff6cf] px-3 py-1.5 text-xs font-medium text-[#755800] sm:self-auto">
-            {birthdayInfo.withinSevenDays} in the next 7 days
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          {birthdayInfo.sorted.slice(0, 5).map((person) => (
-            <div
-              key={person.name}
-              className="flex items-center gap-3 rounded-xl border border-[#efefec] p-3"
-            >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fff6cf] text-xs font-semibold text-[#755800]">
-                {person.name
-                  .split(" ")
-                  .map((part) => part[0])
-                  .join("")}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{person.name}</p>
-                <p className="mt-1 text-xs text-[#737373]">
-                  {formatBirthday(person.dateOfBirth)}
-                </p>
-                <p className="mt-1 text-[11px] font-medium text-[#8a6900]">
-                  {person.daysAway === 0
-                    ? "Today 🎉"
-                    : person.daysAway === 1
-                      ? "Tomorrow"
-                      : `In ${person.daysAway} days`}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-        <p className="mt-4 text-[11px] text-[#8a8a8a]">
-          Demo data for now. Full dates of birth are not displayed on the dashboard.
-        </p>
-      </section>
-
-      {/* Leave calendar and upcoming leave */}
       <section className="mb-6 grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 overflow-hidden rounded-2xl border border-[#e7e7e4] bg-white p-4 shadow-[0_4px_18px_rgba(17,17,21,0.025)] sm:p-6">
           <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
@@ -320,15 +242,12 @@ export default function EmployeeDashboard() {
                 <div className="rounded-lg bg-[#fff6cf] p-2 text-[#755800]">
                   <CalendarDays size={18} />
                 </div>
-
                 <h2 className="font-semibold">Company leave calendar</h2>
               </div>
-
               <p className="mt-2 text-xs text-[#737373]">
-                Get an overview of employee leave across the organisation.
+                Approved leave from the live leave API.
               </p>
             </div>
-
             <div className="flex items-center justify-between gap-3 rounded-xl border border-[#e7e7e4] px-2 py-2 sm:justify-start">
               <button
                 type="button"
@@ -338,11 +257,9 @@ export default function EmployeeDashboard() {
               >
                 <ChevronLeft size={17} />
               </button>
-
               <span className="min-w-[130px] text-center text-sm font-semibold">
                 {monthNames[month]} {year}
               </span>
-
               <button
                 type="button"
                 onClick={() => changeMonth(1)}
@@ -355,27 +272,23 @@ export default function EmployeeDashboard() {
           </div>
 
           <div className="grid grid-cols-7 border-b border-[#e7e7e4]">
-            {["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"].map(
-              (day) => (
-                <div
-                  key={day}
-                  className="py-3 text-center text-[9px] font-semibold tracking-wide text-[#737373] sm:text-xs"
-                >
-                  {day}
-                </div>
-              ),
-            )}
+            {["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"].map((day) => (
+              <div
+                key={day}
+                className="py-3 text-center text-[9px] font-semibold tracking-wide text-[#737373] sm:text-xs"
+              >
+                {day}
+              </div>
+            ))}
           </div>
 
           <div className="grid grid-cols-7 gap-px bg-[#e7e7e4]">
             {calendarCells.map((day, index) => {
               const isToday =
-                day === TODAY_DAY &&
-                month === TODAY_MONTH &&
-                year === TODAY_YEAR;
-
-              const dayLeave =
-                month === 9 && day !== null ? leaveByDay[day] ?? [] : [];
+                day === now.getDate() &&
+                month === now.getMonth() &&
+                year === now.getFullYear();
+              const dayLeave = day !== null ? leaveByDay[day] ?? [] : [];
 
               return (
                 <div
@@ -395,7 +308,6 @@ export default function EmployeeDashboard() {
                       >
                         {day}
                       </span>
-
                       <div className="mt-1 space-y-1">
                         {dayLeave.slice(0, 2).map((name, i) => (
                           <div
@@ -408,7 +320,6 @@ export default function EmployeeDashboard() {
                             {name}
                           </div>
                         ))}
-
                         {dayLeave.length > 2 && (
                           <p className="text-[9px] text-[#737373]">
                             +{dayLeave.length - 2} more
@@ -421,198 +332,34 @@ export default function EmployeeDashboard() {
               );
             })}
           </div>
-
-          <div className="mt-4 flex flex-wrap gap-4 text-xs text-[#737373]">
-            <Legend color="bg-[#fff7d6]" label="Annual leave" />
-            <Legend color="bg-[#e5e8f7]" label="Sick leave" />
-            <Legend color="bg-[#f9e9d5]" label="Other leave" />
-          </div>
         </div>
 
-        {/* Upcoming leave */}
         <div className="rounded-2xl border border-[#e7e7e4] bg-white p-5 shadow-[0_4px_18px_rgba(17,17,21,0.025)]">
-          <div className="mb-5 flex items-start justify-between gap-2">
-            <div>
-              <h2 className="font-semibold">Upcoming leave</h2>
-              <p className="mt-1 text-xs text-[#737373]">
-                Requests and scheduled absences
-              </p>
-            </div>
-
-            <CalendarCheck size={19} className="text-[#8a6900]" />
-          </div>
-
-          <div className="space-y-4">
-            {leaveRequests.length > 0 ? (
-              leaveRequests.map((request) => (
-                <div
-                  key={request.id}
-                  className="border-b border-[#e7e7e4] pb-4 last:border-0 last:pb-0"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#f4f4f2] text-[10px] font-semibold text-[#24242a]">
-                        {request.employee
-                          .split(" ")
-                          .map((part) => part[0])
-                          .join("")}
-                      </div>
-
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">
-                          {request.employee}
-                        </p>
-                        <p className="mt-1 text-xs text-[#737373]">
-                          {request.type}
-                        </p>
-                      </div>
-                    </div>
-
-                    <span
-                      className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-medium ${
-                        request.status === "Pending"
-                          ? "bg-[#fff2d7] text-[#8a5b00]"
-                          : "bg-[#fff6cf] text-[#755800]"
-                      }`}
-                    >
-                      {request.status}
-                    </span>
-                  </div>
-
-                  <p className="ml-12 mt-2 text-xs text-[#737373]">
-                    {request.startDate} · {request.days} day
-                    {request.days === 1 ? "" : "s"}
-                  </p>
-                </div>
-              ))
+          <h2 className="font-semibold">Pending leave</h2>
+          <p className="mt-1 text-xs text-[#737373]">
+            Latest requests waiting for review.
+          </p>
+          <div className="mt-4 space-y-3">
+            {recentPending.length === 0 ? (
+              <p className="text-sm text-[#737373]">No pending requests.</p>
             ) : (
-              <p className="py-8 text-center text-sm text-[#737373]">
-                No upcoming leave requests.
-              </p>
+              recentPending.map((item) => (
+                <Link
+                  key={item.id}
+                  href="/leave-management"
+                  className="block rounded-xl border border-[#efefec] p-3 transition hover:bg-[#fafaf8]"
+                >
+                  <p className="text-sm font-medium">{item.employeeName}</p>
+                  <p className="mt-1 text-xs text-[#737373]">
+                    {item.leaveTypeName} · {formatDate(item.startDate)} →{" "}
+                    {formatDate(item.endDate)}
+                  </p>
+                </Link>
+              ))
             )}
           </div>
-
-          <a
-            href="/leave"
-            className="mt-5 flex items-center justify-between border-t border-[#e7e7e4] pt-4 text-sm font-medium text-[#755800] transition hover:text-[#111115]"
-          >
-            View leave requests
-            <ArrowRight size={16} />
-          </a>
         </div>
       </section>
-
-      {/* Appraisals and employee overview */}
-      <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <div className="rounded-2xl border border-[#e7e7e4] bg-white p-5 shadow-[0_4px_18px_rgba(17,17,21,0.025)] sm:p-6">
-          <div className="mb-5 flex items-start justify-between">
-            <div>
-              <h2 className="font-semibold">Performance & appraisals</h2>
-              <p className="mt-1 text-xs text-[#737373]">
-                Q3 2026 review progress
-              </p>
-            </div>
-
-            <ClipboardCheck size={19} className="text-[#8a6900]" />
-          </div>
-
-          <div className="mb-5 grid grid-cols-2 gap-3">
-            <MiniStat
-              label="In review"
-              value={String(appraisalSummary.employeesInReview)}
-            />
-
-            <MiniStat
-              label="Self-appraisals submitted"
-              value={String(appraisalSummary.selfAppraisalsSubmitted)}
-            />
-
-            <MiniStat
-              label="Manager reviews completed"
-              value={String(appraisalSummary.managerReviewsCompleted)}
-            />
-
-            <MiniStat
-              label="Awaiting manager"
-              value={String(appraisalSummary.awaitingManagerReview)}
-            />
-          </div>
-
-          <div className="h-2 overflow-hidden rounded-full bg-[#f0f0ed]">
-            <div
-              className="h-full rounded-full bg-[#FDC517] transition-all duration-300"
-              style={{ width: `${appraisalProgress}%` }}
-            />
-          </div>
-
-          <div className="mt-3 flex items-center justify-between text-xs text-[#737373]">
-            <span>Manager review completion</span>
-            <span className="font-semibold text-[#202024]">
-              {appraisalProgress}%
-            </span>
-          </div>
-
-          <a
-            href="/performance"
-            className="mt-5 flex items-center justify-between border-t border-[#e7e7e4] pt-4 text-sm font-medium text-[#755800] transition hover:text-[#111115]"
-          >
-            View appraisals
-            <ArrowRight size={16} />
-          </a>
-        </div>
-
-        <div className="rounded-2xl border border-[#e7e7e4] bg-white p-5 shadow-[0_4px_18px_rgba(17,17,21,0.025)] sm:p-6">
-          <div className="mb-5 flex items-start justify-between">
-            <div>
-              <h2 className="font-semibold">Employee overview</h2>
-              <p className="mt-1 text-xs text-[#737373]">
-                A quick look at your workforce
-              </p>
-            </div>
-
-            <UsersRound size={19} className="text-[#8a6900]" />
-          </div>
-
-          <div className="space-y-5">
-            {departmentNames.map((department) => {
-              const count = employees.filter(
-                (employee) => employee.department === department,
-              ).length;
-
-              const percentage =
-                employees.length > 0 ? (count / employees.length) * 100 : 0;
-
-              return (
-                <div key={department}>
-                  <div className="mb-2 flex justify-between gap-3 text-xs">
-                    <span className="text-[#737373]">{department}</span>
-                    <span className="font-semibold">{count}</span>
-                  </div>
-
-                  <div className="h-2 overflow-hidden rounded-full bg-[#f0f0ed]">
-                    <div
-                      className="h-full rounded-full bg-[#FDC517] transition-all duration-300"
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <a
-            href="/employees"
-            className="mt-6 flex items-center justify-between border-t border-[#e7e7e4] pt-4 text-sm font-medium text-[#755800] transition hover:text-[#111115]"
-          >
-            View employees
-            <ArrowRight size={16} />
-          </a>
-        </div>
-      </section>
-
-      <p className="mt-6 text-center text-[11px] text-[#737373]">
-        Neukleos People · HR workspace · Demo data
-      </p>
     </main>
   );
 }
@@ -622,77 +369,49 @@ function SummaryCard({
   value,
   detail,
   icon,
-  trend,
-  warning = false,
+  href,
+  warning,
 }: {
   label: string;
   value: string;
   detail: string;
-  icon: ReactNode;
-  trend: string;
+  icon: React.ReactNode;
+  href: string;
   warning?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-[#e7e7e4] bg-white p-5 shadow-[0_4px_18px_rgba(17,17,21,0.025)] transition-shadow hover:shadow-[0_8px_24px_rgba(17,17,21,0.06)]">
+    <Link
+      href={href}
+      className={`rounded-2xl border bg-white p-5 shadow-[0_4px_18px_rgba(17,17,21,0.025)] transition hover:border-[#FDC517]/60 ${
+        warning ? "border-amber-200" : "border-[#e7e7e4]"
+      }`}
+    >
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs font-medium text-[#737373]">{label}</p>
-
-        <div
-          className={`rounded-lg p-2 ${
-            warning
-              ? "bg-[#fff2d7] text-[#8a5b00]"
-              : "bg-[#fff6cf] text-[#755800]"
-          }`}
-        >
+        <span className="rounded-xl bg-[#fff6cf] p-2.5 text-[#755800]">
           {icon}
-        </div>
+        </span>
       </div>
-
-      <p className="mt-4 text-3xl font-semibold tracking-tight">{value}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight">{value}</p>
       <p className="mt-1 text-xs text-[#737373]">{detail}</p>
-
-      <div
-        className={`mt-4 flex items-center gap-1 text-[11px] ${
-          warning ? "text-[#8a5b00]" : "text-[#755800]"
-        }`}
-      >
-        {warning ? (
-          <ArrowDownRight size={13} />
-        ) : (
-          <ArrowUpRight size={13} />
-        )}
-        {trend}
-      </div>
-    </div>
+    </Link>
   );
 }
 
-function MiniStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-xl bg-[#f4f4f2] p-3">
-      <p className="text-xs text-[#737373]">{label}</p>
-      <p className="mt-2 text-xl font-semibold">{value}</p>
-    </div>
-  );
+function startOfDay(value: Date): Date {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
 }
 
-function Legend({
-  color,
-  label,
-}: {
-  color: string;
-  label: string;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className={`h-2.5 w-2.5 rounded-sm ${color}`} />
-      <span>{label}</span>
-    </div>
-  );
+function timeOfDay(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "morning";
+  if (hour < 17) return "afternoon";
+  return "evening";
+}
+
+function formatDate(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, {
+    day: "2-digit",
+    month: "short",
+  });
 }
