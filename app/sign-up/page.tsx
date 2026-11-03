@@ -47,7 +47,7 @@ export default function SignUpPage() {
 
   function handleGoogleSignUp() {
     setMessage(
-      "Google sign-up will be available once Google authentication is connected."
+      "Google sign-up will be available once Google authentication is connected.."
     );
   }
 
