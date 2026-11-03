@@ -153,7 +153,7 @@ export default function OnboardingPage() {
         <code className="rounded bg-[var(--surface)] px-1.5 py-0.5 text-xs">
           onboarding.read
         </code>{" "}
-        to view onboarding.
+        to view onboarding..
       </div>
     );
   }
